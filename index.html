@@ -1,0 +1,1124 @@
+<title>OBJ Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: full-height 3D stage on the left, control panel on the right; stacked on phones */
+:root{
+  --bg:#E7EBEE; --panel:#F7F9FA; --fg:#141A21; --muted:#56616E; --line:#CFD6DD;
+  --accent:#0B7A75; --accent-fg:#FFFFFF; --stage:#C9D0D7; --wire:#10333B; --grid:#8E99A5;
+  --warn:#9A5600; --ok:#1E7339;
+  --f-ui:"Archivo",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0F1317; --panel:#161B21; --fg:#E4E9EE; --muted:#93A0AE; --line:#29313A;
+  --accent:#3FC1B8; --accent-fg:#05201E; --stage:#1C2229; --wire:#B5F0EA; --grid:#3C4652;
+  --warn:#E5A53C; --ok:#5DC67B; color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0F1317; --panel:#161B21; --fg:#E4E9EE; --muted:#93A0AE; --line:#29313A;
+  --accent:#3FC1B8; --accent-fg:#05201E; --stage:#1C2229; --wire:#B5F0EA; --grid:#3C4652;
+  --warn:#E5A53C; --ok:#5DC67B; color-scheme:dark;
+}
+[hidden]{display:none!important}
+html{height:100%;box-sizing:border-box}
+*,*::before,*::after{box-sizing:inherit}
+body{height:100%;background:var(--bg);color:var(--fg);font-family:var(--f-ui);font-size:14px;line-height:1.45}
+.app{height:100%;display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;padding:16px}
+.stage{position:relative;min-width:0;min-height:0;background:var(--stage);border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+#gl{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+#gl:active{cursor:grabbing}
+#gizmo{position:absolute;right:10px;bottom:34px;width:84px;height:84px;pointer-events:none}
+.hud{position:absolute;left:12px;top:10px;font-family:var(--f-mono);font-size:12px;color:var(--fg);background:color-mix(in srgb,var(--panel) 80%,transparent);padding:4px 8px;border-radius:6px;max-width:calc(100% - 24px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hint{position:absolute;left:12px;right:12px;bottom:8px;margin:0;font-size:12px;color:var(--muted);pointer-events:none}
+.veil{position:fixed;inset:0;display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 22%,transparent);border:3px dashed var(--accent);font-size:20px;font-weight:600;color:var(--fg);z-index:10;pointer-events:none}
+.panel{min-width:0;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:18px;padding-right:2px}
+.panel header h1{margin:0;font-size:22px;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
+.panel header p{margin:2px 0 0;color:var(--muted)}
+h2{margin:0 0 8px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.09em;color:var(--muted)}
+.drop{border:1.5px dashed var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--panel)}
+.drop p{margin:0}
+.drop small{color:var(--muted)}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+button,select{font:inherit;font-size:13px;border-radius:7px;padding:7px 12px;cursor:pointer}
+button.primary{background:var(--accent);color:var(--accent-fg);border:1px solid var(--accent);font-weight:600}
+button.ghost,select{background:transparent;color:var(--fg);border:1px solid var(--line)}
+button:hover{filter:brightness(1.06)}
+button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+select{width:100%;margin-top:8px;background:var(--panel)}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:0}
+.stats div{background:var(--panel);padding:8px 10px}
+.stats dt{font-size:11px;color:var(--muted)}
+.stats dd{margin:0;font-family:var(--f-mono);font-size:15px;font-variant-numeric:tabular-nums}
+.toggles{display:flex;flex-direction:column;gap:6px}
+.toggles label{display:flex;align-items:center;gap:8px;cursor:pointer}
+.toggles input{accent-color:var(--accent);width:16px;height:16px}
+.toggles button{align-self:flex-start;margin-top:4px}
+ul{list-style:none;margin:0;padding:0}
+#mats li{display:grid;grid-template-columns:40px minmax(0,1fr);gap:10px;align-items:start;padding:6px 0;border-top:1px solid var(--line)}
+#mats li:first-child{border-top:0}
+.sw{width:40px;height:40px;border-radius:5px;border:1px solid var(--line);background-size:cover;background-position:center}
+.mname{font-family:var(--f-mono);font-size:12.5px;overflow-wrap:anywhere}
+.slots{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 8px;align-items:center;margin-top:6px;font-size:12px;color:var(--muted)}
+.slots select{margin:0;padding:3px 6px;font-size:12px;min-width:0}
+.more{margin-top:6px;font-size:12px;color:var(--muted)}
+.more summary{cursor:pointer;width:max-content}
+#msgs li{font-size:12.5px;padding:4px 0 4px 10px;border-left:3px solid var(--line);margin-bottom:4px;overflow-wrap:anywhere}
+#msgs li.warn{border-color:var(--warn)}
+#msgs li.ok{border-color:var(--ok)}
+.err{padding:24px;color:var(--fg)}
+@media (max-width:760px){
+  .app{grid-template-columns:1fr;grid-template-rows:58vh auto;height:auto;min-height:100%}
+  .panel{overflow:visible}
+  .hint{display:none}
+  #gizmo{bottom:10px}
+}
+</style>
+
+<div class="app">
+  <main class="stage" id="stage">
+    <canvas id="gl" aria-label="3D view"></canvas>
+    <canvas id="gizmo" width="168" height="168" aria-hidden="true"></canvas>
+    <div class="hud" id="hud">Loading…</div>
+    <p class="hint">Drag: orbit · Right button or Shift+drag: pan · Wheel: zoom · Double-click: reset view</p>
+  </main>
+
+  <aside class="panel">
+    <header>
+      <h1>OBJ Viewer</h1>
+      <p>Custom WebGL renderer with its own OBJ/MTL/TGA/DDS parser. No external engine.</p>
+    </header>
+
+    <section>
+      <h2>Load</h2>
+      <div class="drop">
+        <p>Drop <b>.obj</b>, <b>.mtl</b> and texture files onto the window, or pick them below.</p>
+        <div class="btns">
+          <button class="primary" id="pickFiles" type="button">Choose files</button>
+        </div>
+        <small>PNG, JPG, WebP, GIF, BMP, TGA and DDS textures. Color, normal/bump, roughness/gloss, metallic, occlusion, ORM, specular, opacity and emissive maps are matched from the MTL or by file name; you can also assign them by hand under Materials. Files never leave your computer.</small>
+        <select id="objSel" hidden aria-label="Choose model"></select>
+      </div>
+      <input type="file" id="fileIn" multiple hidden>
+    </section>
+
+    <section>
+      <h2>Model</h2>
+      <dl class="stats">
+        <div><dt>Vertices</dt><dd id="sV">0</dd></div>
+        <div><dt>Triangles</dt><dd id="sT">0</dd></div>
+        <div><dt>Materials</dt><dd id="sM">0</dd></div>
+        <div><dt>Texture maps</dt><dd id="sX">0</dd></div>
+      </dl>
+    </section>
+
+    <section>
+      <h2>Display</h2>
+      <div class="toggles">
+        <label><input type="checkbox" id="optTex" checked> Color texture</label>
+        <label><input type="checkbox" id="optNrm" checked> Surface maps (normal, roughness, metallic…)</label>
+        <label><input type="checkbox" id="optWire"> Wireframe</label>
+        <label><input type="checkbox" id="optGrid" checked> Floor grid</label>
+        <button class="ghost" id="resetView" type="button">Reset view</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Materials</h2>
+      <ul id="mats"></ul>
+    </section>
+
+    <section>
+      <h2>Messages</h2>
+      <ul id="msgs"></ul>
+    </section>
+  </aside>
+</div>
+<div class="veil" id="veil" hidden>Drop the files</div>
+
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const canvas = $('gl');
+const gl = canvas.getContext('webgl2', { antialias: true });
+if (!gl) { $('stage').innerHTML = '<p class="err">This browser does not support WebGL2, so the viewer cannot start.</p>'; return; }
+
+/* ---------- Texture slots (index = texture unit and bit in uHas) ---------- */
+const SLOTS = [['kd','Color'],['nrm','Normal / bump'],['rough','Roughness'],['metal','Metallic'],['ao','Occlusion'],
+               ['ks','Specular'],['ns','Glossiness'],['d','Opacity'],['ke','Emissive']];
+
+/* ---------- Shaders ---------- */
+const VS = `#version 300 es
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNor;
+layout(location=2) in vec2 aUV;
+layout(location=3) in vec3 aCol;
+uniform mat4 uVP;
+out vec3 vPos; out vec3 vNor; out vec2 vUV; out vec3 vCol;
+void main(){ vPos=aPos; vNor=aNor; vUV=aUV; vCol=aCol; gl_Position=uVP*vec4(aPos,1.0); }`;
+const FS = `#version 300 es
+precision highp float;
+in vec3 vPos; in vec3 vNor; in vec2 vUV; in vec3 vCol;
+uniform int uMode; uniform vec4 uColor;
+uniform vec3 uKd, uKa, uKs, uKe; uniform float uNs, uD, uPr, uPm, uBm;
+uniform bool uPbr, uRghInv, uCut, uHeight;
+uniform int uHas; uniform vec4 uST[9]; uniform vec4 uCh[9];
+uniform sampler2D t0, t1, t2, t3, t4, t5, t6, t7, t8;
+uniform vec3 uEye, uKey;
+out vec4 o;
+bool has(int i){ return (uHas & (1<<i)) != 0; }
+vec2 st(int i){ return vUV*uST[i].xy + uST[i].zw; }   // MTL -s scale, -o offset
+float ch(vec4 t, int i){ return dot(t, uCh[i]); }      // channel of a scalar map
+void main(){
+  if(uMode==1){ o=uColor; return; }
+  vec3 n=normalize(vNor);
+  if(!gl_FrontFacing) n=-n;
+  if(has(1)){ // tangent space from screen-space derivatives, no tangent data needed
+    vec2 uv=st(1);
+    vec3 dp1=dFdx(vPos), dp2=dFdy(vPos);
+    vec3 r1=cross(dp2,n), r2=cross(n,dp1);
+    if(uHeight){ // grayscale bump (height) map
+      float h=ch(texture(t1,uv),1)*uBm;
+      float det=dot(dp1,r1);
+      n=normalize(abs(det)*n - sign(det)*(dFdx(h)*r1 + dFdy(h)*r2));
+    } else {     // tangent-space normal map
+      vec2 du1=dFdx(uv), du2=dFdy(uv);
+      vec3 T=r1*du1.x+r2*du2.x, B=r1*du1.y+r2*du2.y;
+      float im=inversesqrt(max(max(dot(T,T),dot(B,B)),1e-24));
+      vec3 tn=texture(t1,uv).xyz*2.0-1.0; tn.xy*=uBm;
+      n=normalize(mat3(T*im,B*im,n)*tn);
+    }
+  }
+  vec4 ct = has(0) ? texture(t0,st(0)) : vec4(1.0);
+  float a = uD*ct.a;
+  if(has(7)) a *= ch(texture(t7,st(7)),7);
+  vec3 base = uKd*ct.rgb*vCol;
+  float ao = has(4) ? ch(texture(t4,st(4)),4) : 1.0;
+  float metal = has(3) ? ch(texture(t3,st(3)),3) : uPm;
+  vec3 ks; float ns;
+  if(uPbr){
+    float r=uPr;
+    if(has(2)){ r=ch(texture(t2,st(2)),2); if(uRghInv) r=1.0-r; }
+    ns=2.0+pow(1.0-r,2.0)*200.0;
+    ks=mix(vec3(0.1),base,metal)*(1.0-r*0.85);
+  } else {
+    ks=uKs; if(has(5)) ks*=texture(t5,st(5)).rgb;
+    ns=uNs; if(has(6)) ns*=ch(texture(t6,st(6)),6);
+  }
+  vec3 diff=base*(1.0-metal);
+  vec3 v=normalize(uEye-vPos), L=normalize(uKey);
+  float d1=max(dot(n,L),0.0), d2=max(dot(n,v),0.0);
+  float s=pow(max(dot(n,normalize(L+v)),0.0), max(ns,1.0));
+  vec3 env=ks*metal*(0.35+0.25*reflect(-v,n).y)*ao; // cheap sky reflection so metals don't go black
+  vec3 col=diff*(0.26+0.34*d2)*ao + uKa*0.04*ao + diff*0.6*d1 + ks*s*0.5 + env;
+  vec3 ke=uKe; if(has(8)) ke*=texture(t8,st(8)).rgb;
+  col+=ke;
+  if(uCut){ if(a<0.5) discard; a=1.0; } else if(a<0.01) discard;
+  o=vec4(col,a);
+}`;
+function compile(type, src){
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, compile(gl.VERTEX_SHADER, VS));
+gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FS));
+gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+const U = {};
+['uVP','uMode','uColor','uKd','uKa','uKs','uKe','uNs','uD','uPr','uPm','uBm','uPbr','uRghInv','uCut','uHeight','uHas','uST','uCh','uEye','uKey']
+  .forEach(n => U[n] = gl.getUniformLocation(prog, n));
+gl.useProgram(prog);
+SLOTS.forEach((_, i) => gl.uniform1i(gl.getUniformLocation(prog, 't'+i), i));
+gl.vertexAttrib3f(3, 1, 1, 1); // vertex color when the model has none
+const aniso = gl.getExtension('EXT_texture_filter_anisotropic');
+
+/* ---------- Vectors and matrices ---------- */
+const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const norm=a=>{const l=Math.hypot(a[0],a[1],a[2])||1;return [a[0]/l,a[1]/l,a[2]/l];};
+function perspective(fov, asp, n, f){
+  const t = 1/Math.tan(fov/2);
+  return [t/asp,0,0,0, 0,t,0,0, 0,0,(f+n)/(n-f),-1, 0,0,2*f*n/(n-f),0];
+}
+function lookAt(e, c, up){
+  const z=norm(sub(e,c)), x=norm(cross(up,z)), y=cross(z,x);
+  return { m:[x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0, -dot(x,e),-dot(y,e),-dot(z,e),1], x, y, z };
+}
+function mul(a, b){
+  const r = new Array(16);
+  for (let c=0;c<4;c++) for (let w=0;w<4;w++)
+    r[c*4+w]=a[w]*b[c*4]+a[4+w]*b[c*4+1]+a[8+w]*b[c*4+2]+a[12+w]*b[c*4+3];
+  return r;
+}
+
+/* ---------- OBJ parser ---------- */
+const NO_MAT = '(no material)';
+function parseOBJ(text){
+  const P=[], T=[], N=[], C=[];
+  const groups=new Map(), mtllibs=[], segs=[];
+  const grp = name => { if(!groups.has(name)) groups.set(name,{mat:name,pos:[],nor:[],uv:[],pid:[],lines:[]}); return groups.get(name); };
+  let cur = grp(NO_MAT), tris = 0, bad = 0, sg = 1, colors = false, mrgb = 0;
+  const fG=[], fOff=[], fSG=[], fP=[]; // triangles without normals, filled in afterwards
+  const idx = (s,len) => { if(!s) return -1; const i=parseInt(s,10); return i<0 ? len+i : i-1; };
+  const lines = text.split(/\r?\n/);
+  for (let li=0; li<lines.length; li++){
+    let line = lines[li];
+    while (line.endsWith('\\') && li+1 < lines.length) line = line.slice(0,-1) + ' ' + lines[++li];
+    line = line.trim();
+    if (!line) continue;
+    if (line[0]==='#'){
+      if (line.startsWith('#MRGB ')){ // ZBrush polypaint: MMRRGGBB per vertex
+        const h = line.slice(6).trim();
+        for (let i=0;i+8<=h.length;i+=8,mrgb++){
+          C[mrgb*3]=parseInt(h.substr(i+2,2),16)/255; C[mrgb*3+1]=parseInt(h.substr(i+4,2),16)/255; C[mrgb*3+2]=parseInt(h.substr(i+6,2),16)/255;
+        }
+        colors = true;
+      }
+      continue;
+    }
+    const sp = line.search(/\s/);
+    const key = sp<0 ? line : line.slice(0,sp);
+    const rest = sp<0 ? '' : line.slice(sp+1).trim();
+    switch (key){
+      case 'v': {
+        const a=rest.split(/\s+/); P.push(+a[0],+a[1],+a[2]);
+        if (a.length>=6){ const i=P.length-3; C[i]=+a[3]; C[i+1]=+a[4]; C[i+2]=+a[5]; colors=true; }
+        break;
+      }
+      case 'vt':{ const a=rest.split(/\s+/); T.push(+a[0], a[1]!==undefined?+a[1]:0); break; }
+      case 'vn':{ const a=rest.split(/\s+/); N.push(+a[0],+a[1],+a[2]); break; }
+      case 'usemtl': cur = grp(rest); break;
+      case 'mtllib': mtllibs.push(...rest.split(/\s+(?=\S+\.mtl\b)/i)); break;
+      case 's': sg = (rest==='off' || rest==='0') ? 0 : (parseInt(rest,10) || 1); break;
+      case 'l': {
+        const nv=P.length/3, ids=rest.split(/\s+/).map(t=>idx(t.split('/')[0],nv)).filter(i=>i>=0&&i<nv);
+        for (let i=0;i<ids.length-1;i++){ const a=ids[i]*3, b=ids[i+1]*3; segs.push(P[a],P[a+1],P[a+2],P[b],P[b+1],P[b+2]); }
+        break;
+      }
+      case 'f': {
+        const nv=P.length/3, nt=T.length/2, nn=N.length/3;
+        const vs = rest.split(/\s+/).map(tok => { const [p,t,n]=tok.split('/'); return { p:idx(p,nv), t:idx(t,nt), n:idx(n,nn) }; });
+        if (vs.length<3 || vs.some(v=>!(v.p>=0 && v.p<nv))){ bad++; break; }
+        for (let i=0;i<vs.length;i++){ // polygon edges for the wireframe
+          const a=vs[i].p*3, b=vs[(i+1)%vs.length].p*3;
+          cur.lines.push(P[a],P[a+1],P[a+2],P[b],P[b+1],P[b+2]);
+        }
+        for (let i=1;i<vs.length-1;i++){ // fan triangulation
+          const tri=[vs[0],vs[i],vs[i+1]], off=cur.pid.length;
+          const need = tri.some(v=>!(v.n>=0 && v.n<nn));
+          for (const v of tri){
+            const p=v.p*3; cur.pos.push(P[p],P[p+1],P[p+2]); cur.pid.push(v.p);
+            if (need) cur.nor.push(0,0,0); else cur.nor.push(N[v.n*3],N[v.n*3+1],N[v.n*3+2]);
+            if (v.t>=0 && v.t<nt) cur.uv.push(T[v.t*2],T[v.t*2+1]); else cur.uv.push(0,0);
+          }
+          if (need){ fG.push(cur); fOff.push(off); fSG.push(sg); fP.push(tri[0].p,tri[1].p,tri[2].p); }
+          tris++;
+        }
+        break;
+      }
+    }
+  }
+  if (fG.length) smoothNormals(P, fG, fOff, fSG, fP);
+  const out = [...groups.values()].filter(g=>g.pos.length);
+  if (colors){
+    const k = C.some(v=>v>1) ? 1/255 : 1;
+    for (const g of out){
+      g.col = new Float32Array(g.pid.length*3);
+      g.pid.forEach((p,i)=>{ for (let c=0;c<3;c++){ const v=C[p*3+c]; g.col[i*3+c] = v===undefined||isNaN(v) ? 1 : v*k; } });
+    }
+  }
+  const min=[Infinity,Infinity,Infinity], max=[-Infinity,-Infinity,-Infinity];
+  for (let i=0;i<P.length;i+=3) for (let k=0;k<3;k++){ const v=P[i+k]; if(!isFinite(v)) continue; if(v<min[k])min[k]=v; if(v>max[k])max[k]=v; }
+  if (!isFinite(min[0])){ min.fill(-1); max.fill(1); }
+  return { groups:out, mtllibs, segs, verts:P.length/3, tris, bad, colors, min, max };
+}
+// Normals for faces without vn: smooth within a smoothing group up to a 60° crease, flat for "s off"
+function smoothNormals(P, fG, fOff, fSG, fP){
+  const nf=fG.length, FN=new Float32Array(nf*3), FA=new Float32Array(nf*3);
+  for (let f=0;f<nf;f++){
+    const a=fP[f*3]*3, b=fP[f*3+1]*3, c=fP[f*3+2]*3;
+    const n=cross([P[b]-P[a],P[b+1]-P[a+1],P[b+2]-P[a+2]],[P[c]-P[a],P[c+1]-P[a+1],P[c+2]-P[a+2]]);
+    const l=Math.hypot(n[0],n[1],n[2])||1;
+    for (let k=0;k<3;k++){ FA[f*3+k]=n[k]; FN[f*3+k]=n[k]/l; }
+  }
+  const nv=P.length/3, start=new Int32Array(nv+1);
+  for (let i=0;i<nf*3;i++) start[fP[i]+1]++;
+  for (let v=0;v<nv;v++) start[v+1]+=start[v];
+  const list=new Int32Array(nf*3), fill=start.slice(0,nv);
+  for (let i=0;i<nf*3;i++) list[fill[fP[i]]++]=(i/3)|0;
+  const COS=Math.cos(Math.PI/3);
+  for (let f=0;f<nf;f++){
+    const g=fG[f], s=fSG[f];
+    for (let k=0;k<3;k++){
+      let x=FN[f*3], y=FN[f*3+1], z=FN[f*3+2];
+      if (s!==0){
+        let sx=0, sy=0, sz=0; const p=fP[f*3+k];
+        for (let j=start[p]; j<start[p+1]; j++){
+          const h=list[j];
+          if (fSG[h]!==s || FN[h*3]*x+FN[h*3+1]*y+FN[h*3+2]*z < COS) continue;
+          sx+=FA[h*3]; sy+=FA[h*3+1]; sz+=FA[h*3+2];
+        }
+        const l=Math.hypot(sx,sy,sz); if (l>0){ x=sx/l; y=sy/l; z=sz/l; }
+      }
+      const o=(fOff[f]+k)*3; g.nor[o]=x; g.nor[o+1]=y; g.nor[o+2]=z;
+    }
+  }
+}
+
+/* ---------- MTL parser ---------- */
+const MAP_KEYS = { map_kd:'kd', map_ks:'ks', map_ns:'ns', map_d:'d', map_ke:'ke', map_emissive:'ke',
+  norm:'nrm', map_kn:'nrm', map_norm:'nrm', map_normal:'nrm', bump:'bump', map_bump:'bump', disp:'disp',
+  map_pr:'rough', map_pm:'metal', map_ka:'ao', map_ao:'ao', map_occlusion:'ao', map_orm:'orm', map_arm:'orm',
+  refl:'refl', map_refl:'refl' };
+function newMat(name){ return { name, Kd:[0.8,0.8,0.8], KdUnset:true, Ka:[0,0,0], Ks:[0,0,0], Ke:[0,0,0], Ns:10, d:1, Pr:null, Pm:null, maps:{} }; }
+function parseMTL(text, into, msgs){
+  let m = null;
+  const finish = () => {
+    if (!m) return; const M = m.maps;
+    if (!M.nrm && M.bump) M.nrm = M.bump;
+    if (!M.nrm && M.disp) M.nrm = M.disp;
+    if (M.orm) [['ao','r'],['rough','g'],['metal','b']].forEach(([s,c]) => { if (!M[s]) M[s] = { ...M.orm, chan: M.orm.chan || c }; });
+    if (M.refl) msgs.push(['warn', `Reflection maps (refl) aren't supported; ignored in "${m.name}".`]);
+    delete M.bump; delete M.disp; delete M.orm; delete M.refl;
+  };
+  for (let line of text.split(/\r?\n/)){
+    line = line.trim();
+    if (!line || line[0]==='#') continue;
+    const sp = line.search(/\s/);
+    const key = (sp<0?line:line.slice(0,sp)).toLowerCase();
+    const rest = sp<0 ? '' : line.slice(sp+1).trim();
+    const v3 = () => { const a=rest.split(/\s+/).map(Number); return [a[0], a[1]??a[0], a[2]??a[0]]; };
+    if (key==='newmtl'){ finish(); m = newMat(rest); into.set(rest, m); }
+    else if (!m) continue;
+    else if (key==='kd'){ m.Kd=v3(); m.KdUnset=false; }
+    else if (key==='ka') m.Ka=v3();
+    else if (key==='ks') m.Ks=v3();
+    else if (key==='ke') m.Ke=v3();
+    else if (key==='ns') m.Ns=+rest;
+    else if (key==='d') m.d=+rest;
+    else if (key==='tr') m.d=1-(+rest);
+    else if (key==='pr') m.Pr=+rest;
+    else if (key==='pm') m.Pm=+rest;
+    else if (MAP_KEYS[key] && rest) m.maps[MAP_KEYS[key]] = parseMap(rest);
+  }
+  finish();
+}
+// Map statement arguments, e.g. "-s 2 2 1 -bm 0.5 -imfchan g textures/wood.png"
+const MAP_OPTS = { '-blendu':'w','-blendv':'w','-cc':'w','-clamp':'w','-imfchan':'w','-type':'w','-bm':1,'-boost':1,'-texres':1,'-mm':2,'-o':3,'-s':3,'-t':3 };
+const defOpt = () => ({ s:[1,1], o:[0,0], bm:1, chan:null });
+function parseMap(rest){
+  const t = rest.split(/\s+/), r = { ...defOpt(), file:'' };
+  let i = 0;
+  while (i < t.length-1 && MAP_OPTS[t[i].toLowerCase()] !== undefined){
+    const k = t[i++].toLowerCase(), n = MAP_OPTS[k];
+    if (n === 'w'){ const v = t[i++]; if (k==='-imfchan') r.chan = v.toLowerCase(); continue; }
+    const nums = [];
+    while (nums.length < n && i < t.length-1 && isFinite(+t[i])) nums.push(+t[i++]);
+    if (k==='-s') r.s = [nums[0]??1, nums[1]??1];
+    else if (k==='-o') r.o = [nums[0]??0, nums[1]??0];
+    else if (k==='-bm') r.bm = nums[0]??1;
+  }
+  r.file = t.slice(i).join(' ');
+  return r;
+}
+
+/* ---------- TGA decoder (browsers can't do this natively) ---------- */
+function decodeTGA(buf){
+  const d = new Uint8Array(buf);
+  const idLen=d[0], cmType=d[1], type=d[2];
+  const w=d[12]|d[13]<<8, h=d[14]|d[15]<<8, bpp=d[16], desc=d[17];
+  if (cmType!==0 || ![2,3,10,11].includes(type) || ![8,24,32].includes(bpp)) throw new Error('unsupported TGA variant');
+  const px=bpp/8, n=w*h, out=new Uint8ClampedArray(n*4);
+  let p=18+idLen, i=0;
+  const put = () => { const o=i*4;
+    if (px===1){ out[o]=out[o+1]=out[o+2]=d[p]; out[o+3]=255; }
+    else { out[o]=d[p+2]; out[o+1]=d[p+1]; out[o+2]=d[p]; out[o+3]= px===4 ? d[p+3] : 255; }
+    i++; };
+  if (type===10 || type===11){
+    while (i<n){ const c=d[p++], cnt=(c&127)+1;
+      if (c&128){ for(let k=0;k<cnt&&i<n;k++) put(); p+=px; }
+      else for(let k=0;k<cnt&&i<n;k++){ put(); p+=px; } }
+  } else while (i<n){ put(); p+=px; }
+  const img = new ImageData(w,h);
+  if (desc & 0x20) img.data.set(out);
+  else for (let y=0;y<h;y++) img.data.set(out.subarray((h-1-y)*w*4,(h-y)*w*4), y*w*4);
+  return toCanvas(img);
+}
+function toCanvas(img){
+  const c = document.createElement('canvas'); c.width=img.width; c.height=img.height;
+  c.getContext('2d').putImageData(img,0,0);
+  return c;
+}
+
+/* ---------- DDS decoder: DXT1/3/5 (BC1-3), BC4, BC5 and uncompressed; top mip level only ---------- */
+function decodeDDS(buf){
+  const d = new Uint8Array(buf), dv = new DataView(buf);
+  if (d.length < 128 || dv.getUint32(0,true) !== 0x20534444) throw new Error('not a DDS file');
+  const h = dv.getUint32(12,true), w = dv.getUint32(16,true), pf = dv.getUint32(80,true);
+  let fmt = String.fromCharCode(d[84],d[85],d[86],d[87]), off = 128;
+  let masks = [92,96,100,104].map(k=>dv.getUint32(k,true)), bits = dv.getUint32(88,true);
+  if ((pf & 4) && fmt === 'DX10'){
+    const dxgi = dv.getUint32(128,true); off += 20;
+    fmt = {71:'DXT1',72:'DXT1',74:'DXT3',75:'DXT3',77:'DXT5',78:'DXT5',80:'ATI1',83:'ATI2',28:'RGBA',29:'RGBA',87:'BGRA',91:'BGRA'}[dxgi];
+    if (!fmt) throw new Error(`DDS format DXGI ${dxgi} (e.g. BC6/BC7) is not supported; convert it to PNG`);
+    if (fmt==='RGBA'){ masks=[0xff,0xff00,0xff0000,0xff000000]; bits=32; }
+    if (fmt==='BGRA'){ masks=[0xff0000,0xff00,0xff,0xff000000]; bits=32; }
+  } else if (!(pf & 4)) fmt = 'RAW';
+  const img = new ImageData(w, h), out = img.data;
+  if (fmt==='RAW' || fmt==='RGBA' || fmt==='BGRA'){
+    const bpp = bits/8, lum = pf & 0x20000, hasA = (pf & 1) || fmt!=='RAW';
+    const chan = (px, m) => { if (!m) return 255; let s=0; while (!((m>>>s)&1)) s++; return Math.round(((px&m)>>>s)*255/(m>>>s)); };
+    for (let i=0;i<w*h;i++){
+      let px = 0; for (let b=0;b<bpp;b++) px |= d[off+i*bpp+b] << (8*b); px >>>= 0;
+      const r = chan(px, masks[0]);
+      out[i*4] = r; out[i*4+1] = lum ? r : chan(px, masks[1]); out[i*4+2] = lum ? r : chan(px, masks[2]);
+      out[i*4+3] = hasA && masks[3] ? chan(px, masks[3]) : 255;
+    }
+    return toCanvas(img);
+  }
+  if (!['DXT1','DXT3','DXT5','ATI1','BC4U','ATI2','BC5U'].includes(fmt)) throw new Error(`DDS format ${fmt} is not supported; convert it to PNG`);
+  const bs = (fmt==='DXT1'||fmt==='ATI1'||fmt==='BC4U') ? 8 : 16;
+  const bw = Math.ceil(w/4), bh = Math.ceil(h/4), px = new Uint8Array(64), a1 = new Uint8Array(16), a2 = new Uint8Array(16);
+  for (let by=0;by<bh;by++) for (let bx=0;bx<bw;bx++){
+    const o = off + (by*bw+bx)*bs;
+    if (fmt==='DXT1') colorBlock(d, o, px, false);
+    else if (fmt==='DXT3'){ colorBlock(d, o+8, px, true); for (let j=0;j<16;j++) px[j*4+3] = ((d[o+(j>>1)] >> ((j&1)*4)) & 15) * 17; }
+    else if (fmt==='DXT5'){ colorBlock(d, o+8, px, true); alphaBlock(d, o, a1); for (let j=0;j<16;j++) px[j*4+3] = a1[j]; }
+    else if (fmt==='ATI1' || fmt==='BC4U'){ alphaBlock(d, o, a1); for (let j=0;j<16;j++){ px[j*4]=px[j*4+1]=px[j*4+2]=a1[j]; px[j*4+3]=255; } }
+    else { // BC5: two-channel normal map, rebuild Z
+      alphaBlock(d, o, a1); alphaBlock(d, o+8, a2);
+      for (let j=0;j<16;j++){
+        const x=a1[j]/127.5-1, y=a2[j]/127.5-1;
+        px[j*4]=a1[j]; px[j*4+1]=a2[j]; px[j*4+2]=Math.round((Math.sqrt(Math.max(0,1-x*x-y*y))*0.5+0.5)*255); px[j*4+3]=255;
+      }
+    }
+    for (let j=0;j<16;j++){
+      const x = bx*4+(j&3), y = by*4+(j>>2);
+      if (x<w && y<h) out.set(px.subarray(j*4, j*4+4), (y*w+x)*4);
+    }
+  }
+  return toCanvas(img);
+}
+function colorBlock(d, o, dst, fourColor){
+  const c0 = d[o]|d[o+1]<<8, c1 = d[o+2]|d[o+3]<<8;
+  const rgb = c => [((c>>11)&31)*255/31|0, ((c>>5)&63)*255/63|0, (c&31)*255/31|0];
+  const p0 = rgb(c0), p1 = rgb(c1), p = [p0, p1];
+  if (c0 > c1 || fourColor) p.push(p0.map((v,i)=>(2*v+p1[i])/3|0), p0.map((v,i)=>(v+2*p1[i])/3|0));
+  else p.push(p0.map((v,i)=>(v+p1[i])>>1), null);
+  const bits = (d[o+4]|d[o+5]<<8|d[o+6]<<16|d[o+7]<<24)>>>0;
+  for (let j=0;j<16;j++){
+    const c = p[(bits>>>(2*j))&3], q = j*4;
+    if (c){ dst[q]=c[0]; dst[q+1]=c[1]; dst[q+2]=c[2]; dst[q+3]=255; } else dst[q]=dst[q+1]=dst[q+2]=dst[q+3]=0;
+  }
+}
+function alphaBlock(d, o, dst){
+  const a0 = d[o], a1 = d[o+1], t = [a0, a1];
+  if (a0 > a1) for (let i=1;i<7;i++) t.push(((7-i)*a0+i*a1)/7|0);
+  else { for (let i=1;i<5;i++) t.push(((5-i)*a0+i*a1)/5|0); t.push(0,255); }
+  for (let half=0;half<2;half++){
+    const b = d[o+2+half*3] | d[o+3+half*3]<<8 | d[o+4+half*3]<<16;
+    for (let j=0;j<8;j++) dst[half*8+j] = t[(b>>(3*j))&7];
+  }
+}
+
+/* ---------- File sources ---------- */
+const base = s => s.replace(/\\/g,'/').split('/').pop().trim().toLowerCase();
+const ext = s => (s.split('.').pop()||'').toLowerCase();
+const stem = s => s.replace(/\.[^.]*$/,'');
+async function readText(src){ return typeof src.text === 'string' ? src.text : src.file.text(); }
+async function loadImage(src, name){
+  if (src.canvas) return src.canvas;
+  const e = ext(name);
+  if (e==='tga' || e==='dds'){ const c = (e==='tga' ? decodeTGA : decodeDDS)(await src.file.arrayBuffer()); return fitTexture(c, c.width, c.height); }
+  // Path 1: classic <img> onload (Safari handles this reliably, no decode() needed)
+  const url = URL.createObjectURL(src.file);
+  try {
+    const img = await new Promise((res, rej) => {
+      const im = new Image();
+      im.onload = () => res(im);
+      im.onerror = () => rej(new Error('the browser could not open the image'));
+      im.src = url;
+    });
+    return fitTexture(img, img.naturalWidth, img.naturalHeight);
+  } catch (err) {
+    if (e==='tif' || e==='tiff') throw new Error('this browser cannot read TIFF; convert it to PNG');
+    // Path 2: createImageBitmap, if <img> couldn't handle it
+    if (!window.createImageBitmap) throw err;
+    const bmp = await createImageBitmap(src.file);
+    return fitTexture(bmp, bmp.width, bmp.height, true);
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+}
+// Downscales oversized images (2048 on phones, otherwise the GPU limit) and always returns something drawable
+const TEX_LIMIT = Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE), matchMedia('(pointer: coarse)').matches ? 2048 : 8192);
+function fitTexture(img, w, h, forceCanvas){
+  const k = Math.min(1, TEX_LIMIT / Math.max(w, h));
+  if (k === 1 && !forceCanvas) return img;
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w*k)); c.height = Math.max(1, Math.round(h*k));
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  if (img.close) img.close();
+  if (k < 1) c.scaledFrom = `${w}×${h}`;
+  return c;
+}
+function uploadTexture(img){
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+  return t;
+}
+// Thumbnail plus a few facts about the image: grayscale (bump vs normal map) and how alpha is used
+function inspect(img){
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const x = c.getContext('2d', { willReadFrequently:true });
+  const info = { gray:false, alpha:false, partial:false };
+  try {
+    x.drawImage(img,0,0,64,64);
+    const p = x.getImageData(0,0,64,64).data;
+    let chroma = 0, lowA = 0, midA = 0;
+    for (let i=0;i<p.length;i+=4){
+      chroma += Math.abs(p[i]-p[i+1]) + Math.abs(p[i+1]-p[i+2]);
+      if (p[i+3] < 250) lowA++;
+      if (p[i+3] > 25 && p[i+3] < 230) midA++;
+    }
+    const n = p.length/4;
+    info.gray = chroma/n < 8; info.alpha = lowA > 0; info.partial = midA/n > 0.2;
+    return { thumb: c.toDataURL(), info };
+  } catch(e){ return { thumb:null, info }; }
+}
+
+/* ---------- Scene ---------- */
+let scene = null, sources = new Map();
+const cam = { yaw:0.7, pitch:0.38, dist:5, target:[0,0,0], fov:45*Math.PI/180 };
+let home = null, gridGeo = null;
+
+function vbuf(data, loc, size){
+  const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b);
+  gl.bufferData(gl.ARRAY_BUFFER, data instanceof Float32Array ? data : new Float32Array(data), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+  return b;
+}
+function lineGeo(arr){
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  const b = vbuf(arr, 0, 3); gl.bindVertexArray(null);
+  return { vao, bufs:[b], count: arr.length/3 };
+}
+function freeGeo(g){ g.bufs.forEach(b=>gl.deleteBuffer(b)); gl.deleteVertexArray(g.vao); }
+function freeScene(){
+  if (!scene) return;
+  for (const g of scene.draw){ freeGeo(g); freeGeo(g.wire); }
+  if (scene.segs) freeGeo(scene.segs);
+  if (gridGeo){ freeGeo(gridGeo); gridGeo=null; }
+}
+
+const IMG_EXT = ['png','jpg','jpeg','webp','gif','bmp','tga','dds','tif','tiff'];
+let texCache = new Map(), allTextures = [];
+// Texture role from the file name; 'orm' = occlusion/roughness/metallic pack, 'mr' = glTF metallic-roughness pack
+function guessRole(k){
+  const n = stem(k);
+  if (/(^|[^a-z])(orm|arm)([^a-z]|$)|occlusionroughnessmetal/.test(n)) return 'orm';
+  if (/metallicroughness|roughnessmetal|metalrough/.test(n)) return 'mr';
+  if (/normal|nrm|(^|[_\-. ])(n|nor)$/.test(n)) return 'nrm';
+  if (/bump|height|disp/.test(n)) return 'nrm';
+  if (/rough|rgh|gloss|smooth/.test(n)) return 'rough';
+  if (/metal/.test(n)) return 'metal';
+  if (/(^|[_\-. ])ao([_\-. ]|$)|occlusion|ambient|cavity/.test(n)) return 'ao';
+  if (/emiss|emit|glow|illum/.test(n)) return 'ke';
+  if (/opacity|alpha|transparen|mask|cutout/.test(n)) return 'd';
+  if (/spec/.test(n)) return 'ks';
+  if (/thick|subsurface|sss|curvature|matid|sheen|clearcoat|refl|env|lightmap|shadow/.test(n)) return 'other';
+  return 'kd';
+}
+const SLOT_ROLES = { rough:['rough','orm','mr'], metal:['metal','orm','mr'], ao:['ao','orm'] };
+function commonPrefix(a, b){ let i=0; while (i<a.length && i<b.length && a[i]===b[i]) i++; return i; }
+// Picks a texture for a slot by file name; with several candidates, the one whose name best matches the material
+function pickByName(slot, imgs, hints){
+  const roles = SLOT_ROLES[slot] || [slot];
+  const cand = imgs.filter(k => roles.includes(guessRole(k)));
+  const match = k => Math.max(0, ...hints.map(h => commonPrefix(stem(k), h)));
+  if (cand.length === 1) return guessRole(cand[0]) === slot || match(cand[0]) >= 3 ? cand[0] : null; // packs only by name
+  if (!cand.length) return null;
+  const ranked = cand.map(k => [k, match(k)*10 - roles.indexOf(guessRole(k))]).sort((a,b) => b[1]-a[1]);
+  if (match(ranked[0][0]) < 3 || ranked[0][1] === ranked[1][1]) return null;
+  return ranked[0][0];
+}
+// Which channel a scalar map is read from
+function slotChan(g, slot){
+  if (g.opt[slot].chan) return g.opt[slot].chan;
+  const role = guessRole(g.slots[slot] || '');
+  if (role==='orm') return { ao:'r', rough:'g', metal:'b' }[slot] || 'l';
+  if (role==='mr') return { rough:'g', metal:'b' }[slot] || 'l';
+  if (slot==='d' && g.info.d && g.info.d.alpha) return 'a';
+  return 'l';
+}
+const CHAN = { r:[1,0,0,0], g:[0,1,0,0], b:[0,0,1,0], a:[0,0,0,1], m:[0,0,0,1] };
+const chanVec = c => CHAN[c] || [0.2126,0.7152,0.0722,0];
+
+function getTex(key){
+  if (!texCache.has(key)){
+    const s = sources.get(key);
+    texCache.set(key, (async () => {
+      const img = await loadImage(s, key);
+      const tex = uploadTexture(img); allTextures.push(tex);
+      const { thumb, info } = inspect(img);
+      return { tex, thumb, info, note: img.scaledFrom ? `${s.name}: loaded at ${img.width}×${img.height} instead of ${img.scaledFrom} to fit in memory.` : null };
+    })());
+  }
+  return texCache.get(key);
+}
+function freeTextures(){ allTextures.forEach(t=>gl.deleteTexture(t)); allTextures = []; texCache = new Map(); }
+
+async function assign(g, slot, key, msgs){
+  g.slots[slot] = key || null; g.tex[slot] = null; g.thumb[slot] = null; g.info[slot] = null;
+  if (key){
+    try {
+      const r = await getTex(key);
+      g.tex[slot] = r.tex; g.thumb[slot] = r.thumb; g.info[slot] = r.info;
+      if (r.note && msgs && !msgs.some(m=>m[1]===r.note)) msgs.push(['ok', r.note]);
+    }
+    catch(e){ msgs && msgs.push(['warn', `Could not open: ${sources.get(key).name} (${e.message || 'unknown format'})`]); g.slots[slot] = null; }
+  }
+  if (slot==='kd' && g.m.KdUnset) g.m.Kd = g.slots.kd ? [1,1,1] : [0.8,0.8,0.8];
+}
+
+async function loadModel(objKey){
+  const msgs = [];
+  const hud = $('hud'); hud.textContent = 'Loading…';
+  await new Promise(r => setTimeout(r, 30));
+  const objSrc = sources.get(objKey);
+  const obj = parseOBJ(await readText(objSrc));
+  if (!obj.groups.length && !obj.segs.length) msgs.push(['warn', `${objSrc.name} contains no faces or lines.`]);
+  if (obj.bad) msgs.push(['warn', `${obj.bad.toLocaleString('en-US')} faces were skipped because they point to missing vertices.`]);
+  if (obj.colors) msgs.push(['ok', 'Vertex colors found and applied.']);
+
+  const mats = new Map();
+  if (!obj.mtllibs.length && obj.groups.some(g=>g.mat!==NO_MAT)) msgs.push(['warn', 'The OBJ uses materials but does not reference an MTL file.']);
+  for (const lib of obj.mtllibs){
+    let s = sources.get(base(lib));
+    if (!s){
+      const any = [...sources.keys()].filter(k => ext(k)==='mtl');
+      if (any.length===1){ s = sources.get(any[0]); msgs.push(['warn', `The OBJ asks for ${lib}; using ${s.name} instead.`]); }
+      else { msgs.push(['warn', `Missing material file: ${lib}`]); continue; }
+    }
+    parseMTL(await readText(s), mats, msgs);
+  }
+
+  freeScene(); freeTextures();
+  const imgs = [...sources.keys()].filter(k => IMG_EXT.includes(ext(k)));
+  const draw = [];
+  for (const g of obj.groups){
+    const m = mats.get(g.mat);
+    if (!m && g.mat !== NO_MAT) msgs.push(['warn', `The MTL has no material named "${g.mat}".`]);
+    const mm = m || { ...newMat(g.mat), Ks:[0.1,0.1,0.1], Ns:20 };
+    const d = { mat:g.mat, m:mm, slots:{}, tex:{}, thumb:{}, info:{}, opt:{}, count:g.pos.length/3 };
+    const hints = [mm.maps.kd ? stem(base(mm.maps.kd.file)) : null, g.mat.toLowerCase()].filter(Boolean);
+    for (const [slot, label] of SLOTS){
+      const ref = mm.maps[slot];
+      d.opt[slot] = ref ? { s:ref.s, o:ref.o, bm:ref.bm, chan:ref.chan } : defOpt();
+      let key = null;
+      if (ref && sources.has(base(ref.file))) key = base(ref.file);
+      if (!key){
+        key = pickByName(slot, imgs, hints);
+        if (key && ref) msgs.push(['warn', `The MTL asks for "${ref.file}", which isn't there. Using ${sources.get(key).name} instead.`]);
+        else if (key) msgs.push(['ok', `${label} map matched by file name: ${sources.get(key).name}`]);
+        else if (ref) msgs.push(['warn', `Missing texture: ${ref.file}. You can pick one by hand under Materials.`]);
+      }
+      await assign(d, slot, key, msgs);
+    }
+    const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+    d.bufs = [vbuf(g.pos,0,3), vbuf(g.nor,1,3), vbuf(g.uv,2,2)];
+    if (g.col) d.bufs.push(vbuf(g.col,3,3));
+    gl.bindVertexArray(null);
+    d.vao = vao; d.wire = lineGeo(g.lines);
+    draw.push(d);
+  }
+  const center = obj.min.map((v,i)=>(v+obj.max[i])/2);
+  const radius = Math.max(1e-6, Math.hypot(...obj.max.map((v,i)=>v-obj.min[i]))/2);
+  scene = { draw, center, radius, minY: obj.min[1], segs: obj.segs.length ? lineGeo(obj.segs) : null };
+  buildGrid();
+  home = { yaw:0.7, pitch:0.38, dist: radius/Math.sin(cam.fov/2)*1.08, target:[...center] };
+  resetView();
+
+  $('sV').textContent = obj.verts.toLocaleString('en-US');
+  $('sT').textContent = obj.tris.toLocaleString('en-US');
+  $('sM').textContent = draw.length;
+  updateTexStat();
+  renderMats();
+  if (!msgs.some(m=>m[0]==='warn')) msgs.unshift(['ok', `${objSrc.name} loaded, all referenced files found.`]);
+  renderMsgs(msgs);
+  hud.textContent = objSrc.name;
+  requestDraw();
+}
+function updateTexStat(){
+  const n = scene.draw.reduce((a,d)=>a+SLOTS.filter(([s])=>d.tex[s]).length,0);
+  $('sX').textContent = String(n);
+}
+
+function buildGrid(){
+  const r = scene.radius*1.6, step = Math.pow(10, Math.floor(Math.log10(r/5)));
+  const n = Math.ceil(r/step), y = scene.minY, cx = scene.center[0], cz = scene.center[2];
+  const ox = Math.round(cx/step)*step, oz = Math.round(cz/step)*step, a = [];
+  for (let i=-n;i<=n;i++){
+    a.push(ox+i*step,y,oz-n*step, ox+i*step,y,oz+n*step);
+    a.push(ox-n*step,y,oz+i*step, ox+n*step,y,oz+i*step);
+  }
+  gridGeo = lineGeo(a);
+}
+
+/* ---------- UI lists ---------- */
+function renderMats(){
+  const ul = $('mats'); ul.innerHTML = '';
+  const imgs = [...sources.keys()].filter(k => IMG_EXT.includes(ext(k)));
+  scene.draw.forEach((d, di) => {
+    const li = document.createElement('li');
+    const sw = document.createElement('div'); sw.className = 'sw';
+    const c = d.m.Kd.map(v=>Math.round(Math.min(1,Math.max(0,v))*255));
+    sw.style.backgroundColor = `rgb(${c.join(',')})`;
+    if (d.thumb.kd) sw.style.backgroundImage = `url(${d.thumb.kd})`;
+    const box = document.createElement('div');
+    const nm = document.createElement('div'); nm.className = 'mname'; nm.textContent = d.mat;
+    const used = document.createElement('div'); used.className = 'slots';
+    const more = document.createElement('details'); more.className = 'more'; more.open = !!d.moreOpen;
+    more.addEventListener('toggle', () => { d.moreOpen = more.open; });
+    const sum = document.createElement('summary');
+    const unused = document.createElement('div'); unused.className = 'slots';
+    for (const [slot, label] of SLOTS){
+      const id = `slot-${di}-${slot}`;
+      const lab = document.createElement('label'); lab.htmlFor = id; lab.textContent = label;
+      const sel = document.createElement('select'); sel.id = id;
+      sel.innerHTML = '<option value="">none</option>';
+      imgs.forEach(k => { const o=document.createElement('option'); o.value=k; o.textContent=sources.get(k).name; sel.append(o); });
+      sel.value = d.slots[slot] || '';
+      sel.disabled = !imgs.length;
+      sel.addEventListener('change', async () => {
+        sel.disabled = true;
+        d.opt[slot] = defOpt();
+        const m = []; await assign(d, slot, sel.value, m);
+        if (m.length) renderMsgs(m);
+        renderMats(); updateTexStat(); requestDraw();
+      });
+      (d.slots[slot] || slot==='kd' ? used : unused).append(lab, sel);
+    }
+    sum.textContent = `Other maps (${unused.children.length/2})`;
+    more.append(sum, unused);
+    box.append(nm, used);
+    if (unused.children.length) box.append(more);
+    li.append(sw, box); ul.append(li);
+  });
+  if (!scene.draw.length) ul.innerHTML = '<li>No materials.</li>';
+}
+
+function renderMsgs(list){
+  const ul = $('msgs'); ul.innerHTML = '';
+  for (const [k,txt] of list){ const li=document.createElement('li'); li.className=k; li.textContent=txt; ul.append(li); }
+}
+
+/* ---------- Drawing ---------- */
+let pending = false;
+function requestDraw(){ if(!pending){ pending=true; requestAnimationFrame(draw); } }
+function cssColor(name){
+  const s = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const m = s.match(/^#([0-9a-f]{6})$/i);
+  if (!m) return [0.5,0.5,0.5];
+  const n = parseInt(m[1],16); return [(n>>16&255)/255,(n>>8&255)/255,(n&255)/255];
+}
+function eyePos(){
+  const cp=Math.cos(cam.pitch);
+  return [cam.target[0]+cam.dist*cp*Math.sin(cam.yaw), cam.target[1]+cam.dist*Math.sin(cam.pitch), cam.target[2]+cam.dist*cp*Math.cos(cam.yaw)];
+}
+function draw(){
+  pending = false;
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  const w = Math.max(1, Math.round(canvas.clientWidth*dpr)), h = Math.max(1, Math.round(canvas.clientHeight*dpr));
+  if (canvas.width!==w || canvas.height!==h){ canvas.width=w; canvas.height=h; }
+  gl.viewport(0,0,w,h);
+  const bg = cssColor('--stage');
+  gl.clearColor(bg[0],bg[1],bg[2],1);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  if (!scene) return;
+  gl.enable(gl.DEPTH_TEST);
+  gl.useProgram(prog);
+  const eye = eyePos();
+  const view = lookAt(eye, cam.target, [0,1,0]);
+  const near = Math.max(cam.dist*0.005, scene.radius*1e-4), far = cam.dist + scene.radius*6;
+  gl.uniformMatrix4fv(U.uVP, false, mul(perspective(cam.fov, w/h, near, far), view.m));
+  gl.uniform3fv(U.uEye, eye);
+  gl.uniform3fv(U.uKey, [0.45,1,0.3]);
+  const showWire = $('optWire').checked, showTex = $('optTex').checked, showMaps = $('optNrm').checked;
+  const on = (g, slot) => !!(g.tex[slot] && (slot==='kd' ? showTex : showMaps));
+
+  if ($('optGrid').checked && gridGeo){
+    gl.uniform1i(U.uMode, 1); gl.uniform4fv(U.uColor, [...cssColor('--grid'), 1]);
+    gl.bindVertexArray(gridGeo.vao); gl.drawArrays(gl.LINES, 0, gridGeo.count);
+  }
+
+  gl.uniform1i(U.uMode, 0);
+  if (showWire){ gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1,1); }
+  const isTransparent = g => g.m.d < 0.999 || on(g,'d') || (on(g,'kd') && g.info.kd && g.info.kd.partial);
+  const pass = transparent => {
+    for (const g of scene.draw){
+      if (isTransparent(g) !== transparent) continue;
+      let mask = 0; const st = [], chs = [];
+      SLOTS.forEach(([slot], i) => {
+        const use = on(g, slot);
+        if (use) mask |= 1<<i;
+        gl.activeTexture(gl.TEXTURE0+i); gl.bindTexture(gl.TEXTURE_2D, use ? g.tex[slot] : null);
+        const o = g.opt[slot]; st.push(o.s[0], o.s[1], o.o[0], o.o[1]);
+        chs.push(...chanVec(slotChan(g, slot)));
+      });
+      const height = !!(g.info.nrm && g.info.nrm.gray);
+      const ke = on(g,'ke') && g.m.Ke.every(v=>v===0) ? [1,1,1] : g.m.Ke;
+      gl.uniform1i(U.uHas, mask); gl.uniform4fv(U.uST, st); gl.uniform4fv(U.uCh, chs);
+      gl.uniform3fv(U.uKd, g.m.Kd); gl.uniform3fv(U.uKa, g.m.Ka); gl.uniform3fv(U.uKs, g.m.Ks); gl.uniform3fv(U.uKe, ke);
+      gl.uniform1f(U.uNs, g.m.Ns); gl.uniform1f(U.uD, g.m.d);
+      gl.uniform1f(U.uPr, g.m.Pr ?? 0.5); gl.uniform1f(U.uPm, g.m.Pm ?? 0);
+      gl.uniform1i(U.uPbr, g.m.Pr!==null || g.m.Pm!==null || on(g,'rough') || on(g,'metal') ? 1 : 0);
+      gl.uniform1i(U.uRghInv, /gloss|smooth/.test(g.slots.rough || '') ? 1 : 0);
+      gl.uniform1i(U.uHeight, height ? 1 : 0);
+      gl.uniform1f(U.uBm, height ? g.opt.nrm.bm*scene.radius*0.004 : g.opt.nrm.bm);
+      gl.uniform1i(U.uCut, transparent ? 0 : 1);
+      gl.bindVertexArray(g.vao); gl.drawArrays(gl.TRIANGLES, 0, g.count);
+    }
+  };
+  gl.disable(gl.BLEND); gl.depthMask(true); pass(false);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false); pass(true);
+  gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.POLYGON_OFFSET_FILL);
+
+  gl.uniform1i(U.uMode, 1); gl.uniform4fv(U.uColor, [...cssColor('--wire'), 1]);
+  if (showWire) for (const g of scene.draw){ gl.bindVertexArray(g.wire.vao); gl.drawArrays(gl.LINES, 0, g.wire.count); }
+  if (scene.segs){ gl.bindVertexArray(scene.segs.vao); gl.drawArrays(gl.LINES, 0, scene.segs.count); }
+  gl.bindVertexArray(null);
+  drawGizmo(view);
+}
+
+function drawGizmo(view){
+  const c = $('gizmo'), x = c.getContext('2d'), s = c.width, r = s*0.36, o = s/2;
+  x.clearRect(0,0,s,s);
+  const fg = getComputedStyle(document.documentElement).getPropertyValue('--fg').trim();
+  const axes = [['X',[1,0,0],'#D9534A'],['Y',[0,1,0],'#3FA34D'],['Z',[0,0,1],'#3C78D8']]
+    .map(([n,v,col]) => ({ n, col, sx: dot(view.x,v), sy: dot(view.y,v), sz: dot(view.z,v) }))
+    .sort((a,b) => a.sz - b.sz);
+  x.lineWidth = 4; x.lineCap = 'round'; x.font = '600 22px "JetBrains Mono", monospace'; x.textAlign='center'; x.textBaseline='middle';
+  for (const a of axes){
+    const ex = o + a.sx*r, ey = o - a.sy*r;
+    x.strokeStyle = a.col; x.beginPath(); x.moveTo(o,o); x.lineTo(ex,ey); x.stroke();
+    x.fillStyle = a.col; x.beginPath(); x.arc(ex,ey,13,0,Math.PI*2); x.fill();
+    x.fillStyle = '#FFFFFF'; x.fillText(a.n, ex, ey+1);
+  }
+  x.fillStyle = fg; x.beginPath(); x.arc(o,o,3,0,Math.PI*2); x.fill();
+}
+
+/* ---------- Camera controls ---------- */
+function resetView(){ if(!home) return; Object.assign(cam, { yaw:home.yaw, pitch:home.pitch, dist:home.dist, target:[...home.target] }); requestDraw(); }
+function clampDist(){ if(!scene) return; cam.dist = Math.min(scene.radius*60, Math.max(scene.radius*0.02, cam.dist)); }
+function pan(dx, dy){
+  const view = lookAt(eyePos(), cam.target, [0,1,0]);
+  const k = 2*Math.tan(cam.fov/2)*cam.dist/canvas.clientHeight;
+  for (let i=0;i<3;i++) cam.target[i] += (-dx*view.x[i] + dy*view.y[i]) * k;
+}
+const ptrs = new Map(); let pinch = null;
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId);
+  ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY, pan: e.button===2 || e.button===1 || e.shiftKey });
+  if (ptrs.size===2){ const [a,b]=[...ptrs.values()]; pinch = { d:Math.hypot(a.x-b.x,a.y-b.y), mx:(a.x+b.x)/2, my:(a.y+b.y)/2 }; }
+});
+canvas.addEventListener('pointermove', e => {
+  const p = ptrs.get(e.pointerId); if (!p) return;
+  const dx = e.clientX-p.x, dy = e.clientY-p.y;
+  p.x = e.clientX; p.y = e.clientY;
+  if (ptrs.size===1){
+    if (p.pan || e.shiftKey) pan(dx, dy);
+    else { cam.yaw -= dx*0.008; cam.pitch = Math.max(-1.55, Math.min(1.55, cam.pitch + dy*0.008)); }
+  } else if (ptrs.size===2 && pinch){
+    const [a,b] = [...ptrs.values()];
+    const d = Math.hypot(a.x-b.x,a.y-b.y), mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
+    if (d>0) cam.dist *= pinch.d/d; clampDist();
+    pan(mx-pinch.mx, my-pinch.my);
+    pinch = { d, mx, my };
+  }
+  requestDraw();
+});
+const up = e => { ptrs.delete(e.pointerId); if (ptrs.size<2) pinch=null; };
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('wheel', e => { e.preventDefault(); cam.dist *= Math.exp(e.deltaY*0.0012); clampDist(); requestDraw(); }, { passive:false });
+canvas.addEventListener('dblclick', resetView);
+$('resetView').addEventListener('click', resetView);
+['optTex','optNrm','optWire','optGrid'].forEach(id => $(id).addEventListener('change', requestDraw));
+new ResizeObserver(requestDraw).observe(canvas);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', requestDraw);
+new MutationObserver(requestDraw).observe(document.documentElement, { attributes:true, attributeFilter:['data-theme'] });
+
+/* ---------- Receiving files ---------- */
+// Makes `map` the active file set and loads its first OBJ; returns false if it has none
+async function useSources(map){
+  const objs = [...map.keys()].filter(k => ext(k)==='obj');
+  if (!objs.length) return false;
+  sources = map;
+  const sel = $('objSel'); sel.innerHTML = '';
+  objs.forEach(k => { const o=document.createElement('option'); o.value=k; o.textContent=map.get(k).name; sel.append(o); });
+  sel.hidden = objs.length < 2;
+  await loadModel(objs[0]);
+  return true;
+}
+async function useFiles(files){
+  if (!files.length) return;
+  const map = new Map();
+  for (const f of files) map.set(base(f.name), { name:f.name, file:f });
+  try {
+    if (!await useSources(map)) renderMsgs([['warn','None of the selected files is an .obj file.']]);
+  } catch(e){ renderMsgs([['warn', `Loading the model failed: ${e.message}`]]); $('hud').textContent='Error'; }
+}
+$('objSel').addEventListener('change', e => loadModel(e.target.value));
+$('pickFiles').addEventListener('click', () => $('fileIn').click());
+$('fileIn').addEventListener('change', e => { useFiles([...e.target.files]); e.target.value=''; });
+
+let dragDepth = 0;
+window.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; $('veil').hidden = false; });
+window.addEventListener('dragleave', e => { e.preventDefault(); if (--dragDepth<=0){ dragDepth=0; $('veil').hidden = true; } });
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => {
+  e.preventDefault(); dragDepth = 0; $('veil').hidden = true;
+  useFiles([...e.dataTransfer.files]);
+});
+
+/* ---------- Built-in fallback sample: a small house with two generated textures ---------- */
+function brickTexture(){
+  const c=document.createElement('canvas'); c.width=c.height=256; const x=c.getContext('2d');
+  x.fillStyle='#CFC6B8'; x.fillRect(0,0,256,256);
+  const rows=8, bh=256/rows, bw=64;
+  for (let r=0;r<rows;r++){
+    const off = r%2 ? bw/2 : 0;
+    for (let i=-1;i<5;i++){
+      const shade = 150 + ((r*7+i*13)%5)*9;
+      x.fillStyle=`rgb(${shade},${Math.round(shade*0.45)},${Math.round(shade*0.33)})`;
+      x.fillRect(i*bw+off+2, r*bh+2, bw-4, bh-4);
+    }
+  }
+  return c;
+}
+function tileTexture(){
+  const c=document.createElement('canvas'); c.width=c.height=256; const x=c.getContext('2d');
+  x.fillStyle='#4A2E26'; x.fillRect(0,0,256,256);
+  const rows=8, th=256/rows, tw=32;
+  for (let r=0;r<rows;r++){
+    const off = r%2 ? tw/2 : 0;
+    for (let i=-1;i<9;i++){
+      const g=x.createLinearGradient(0,r*th,0,(r+1)*th);
+      g.addColorStop(0,'#9C4632'); g.addColorStop(1,'#6A2C20');
+      x.fillStyle=g; x.beginPath();
+      x.roundRect ? x.roundRect(i*tw+off+1, r*th+1, tw-2, th-2, [0,0,10,10]) : x.rect(i*tw+off+1, r*th+1, tw-2, th-2);
+      x.fill();
+    }
+  }
+  return c;
+}
+const SAMPLE_OBJ = `# Sample: small house
+mtllib house.mtl
+v -1 0 -1
+v 1 0 -1
+v 1 1.2 -1
+v -1 1.2 -1
+v -1 0 1
+v 1 0 1
+v 1 1.2 1
+v -1 1.2 1
+v -1.15 1.15 -1.15
+v 1.15 1.15 -1.15
+v 1.15 1.15 1.15
+v -1.15 1.15 1.15
+v -1.15 2.0 0
+v 1.15 2.0 0
+v -0.25 0 1.01
+v 0.25 0 1.01
+v 0.25 0.72 1.01
+v -0.25 0.72 1.01
+vt 0 0
+vt 2 0
+vt 2 1.2
+vt 0 1.2
+vt 1 0.85
+vt 0 0
+vt 1 0
+vt 1 1
+vt 0 1
+usemtl wall
+f 5/1 6/2 7/3 8/4
+f 2/1 1/2 4/3 3/4
+f 6/1 2/2 3/3 7/4
+f 1/1 5/2 8/3 4/4
+f 1/1 2/2 6/3 5/4
+f 11/1 10/2 14/5
+f 9/1 12/2 13/5
+usemtl roof
+f 12/1 11/2 14/3 13/4
+f 10/1 9/2 13/3 14/4
+f 9/1 10/2 11/3 12/4
+usemtl door
+f 15/6 16/7 17/8 18/9
+`;
+const SAMPLE_MTL = `newmtl wall
+Kd 1 1 1
+Ks 0.05 0.05 0.05
+Ns 10
+map_Kd textures/brick.png
+
+newmtl roof
+Kd 1 1 1
+Ks 0.15 0.15 0.15
+Ns 25
+map_Kd textures\\tiles.png
+
+newmtl door
+Kd 0.38 0.24 0.14
+Ks 0.25 0.25 0.25
+Ns 40
+`;
+function loadSample(note){
+  sources = new Map([
+    ['house.obj', { name:'house.obj (sample)', text:SAMPLE_OBJ }],
+    ['house.mtl', { name:'house.mtl', text:SAMPLE_MTL }],
+    ['brick.png', { name:'brick.png', canvas:brickTexture() }],
+    ['tiles.png', { name:'tiles.png', canvas:tileTexture() }],
+  ]);
+  $('objSel').hidden = true;
+  loadModel('house.obj').then(() => {
+    renderMsgs([['warn', note], ['ok','Built-in sample loaded. Drop your own files here to replace it.']]);
+  }).catch(e => renderMsgs([['warn', `Loading the sample failed: ${e.message}`]]));
+}
+
+/* ---------- Default model: the folder's files, packed into default-model.js (node make-default.js) ---------- */
+function b64Blob(b64, name){
+  const bin = atob(b64), a = new Uint8Array(bin.length);
+  for (let i=0;i<bin.length;i++) a[i] = bin.charCodeAt(i);
+  const e = ext(name);
+  return new Blob([a], { type: ['png','gif','bmp','webp'].includes(e) ? 'image/'+e : e==='jpg'||e==='jpeg' ? 'image/jpeg' : 'application/octet-stream' });
+}
+const defScript = document.createElement('script');
+defScript.src = 'default-model.js';
+defScript.onload = async () => {
+  const map = new Map();
+  for (const [name, f] of Object.entries(window.DEFAULT_MODEL || {}))
+    map.set(base(name), typeof f.text === 'string' ? { name, text:f.text } : { name, file:b64Blob(f.b64, name) });
+  delete window.DEFAULT_MODEL;
+  try { if (!await useSources(map)) loadSample('default-model.js contains no .obj file.'); }
+  catch(e){ loadSample(`Loading the default model failed: ${e.message}`); }
+};
+defScript.onerror = () => loadSample('default-model.js not found next to this page (run: node make-default.js).');
+document.head.append(defScript);
+})();
+</script>
