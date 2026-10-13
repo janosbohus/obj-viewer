@@ -93,14 +93,16 @@ ul{list-style:none;margin:0;padding:0}
     <section>
       <h2>Load</h2>
       <div class="drop">
-        <p>Drop <b>.obj</b>, <b>.mtl</b> and texture files onto the window, or pick them below.</p>
+        <p>Drop <b>.obj</b>, <b>.mtl</b> and texture files or a whole folder onto the window, or pick them below.</p>
         <div class="btns">
           <button class="primary" id="pickFiles" type="button">Choose files</button>
+          <button class="ghost" id="pickDir" type="button">Choose folder</button>
         </div>
         <small>PNG, JPG, WebP, GIF, BMP, TGA and DDS textures. Color, normal/bump, roughness/gloss, metallic, occlusion, ORM, specular, opacity and emissive maps are matched from the MTL or by file name; you can also assign them by hand under Materials. Files never leave your computer.</small>
         <select id="objSel" hidden aria-label="Choose model"></select>
       </div>
       <input type="file" id="fileIn" multiple hidden>
+      <input type="file" id="dirIn" webkitdirectory multiple hidden>
     </section>
 
     <section>
@@ -986,14 +988,31 @@ async function useFiles(files){
 $('objSel').addEventListener('change', e => loadModel(e.target.value));
 $('pickFiles').addEventListener('click', () => $('fileIn').click());
 $('fileIn').addEventListener('change', e => { useFiles([...e.target.files]); e.target.value=''; });
+$('pickDir').addEventListener('click', () => $('dirIn').click());
+$('dirIn').addEventListener('change', e => { useFiles([...e.target.files]); e.target.value=''; });
 
+// Dropped folders are walked recursively; plain files pass straight through
+async function filesFromDrop(dt){
+  const entries = [...dt.items].map(i => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+  if (!entries.length) return [...dt.files];
+  const out = [];
+  const walk = async en => {
+    if (en.isFile) out.push(await new Promise((res,rej)=>en.file(res,rej)));
+    else if (en.isDirectory){
+      const r = en.createReader(); let batch;
+      do { batch = await new Promise((res,rej)=>r.readEntries(res,rej)); for (const c of batch) await walk(c); } while (batch.length);
+    }
+  };
+  for (const en of entries) await walk(en);
+  return out;
+}
 let dragDepth = 0;
 window.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; $('veil').hidden = false; });
 window.addEventListener('dragleave', e => { e.preventDefault(); if (--dragDepth<=0){ dragDepth=0; $('veil').hidden = true; } });
 window.addEventListener('dragover', e => e.preventDefault());
-window.addEventListener('drop', e => {
+window.addEventListener('drop', async e => {
   e.preventDefault(); dragDepth = 0; $('veil').hidden = true;
-  useFiles([...e.dataTransfer.files]);
+  useFiles(await filesFromDrop(e.dataTransfer));
 });
 
 /* ---------- Built-in fallback sample: a small house with two generated textures ---------- */
