@@ -969,15 +969,17 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', requestDra
 new MutationObserver(requestDraw).observe(document.documentElement, { attributes:true, attributeFilter:['data-theme'] });
 
 /* ---------- Receiving files ---------- */
-// Makes `map` the active file set and loads its first OBJ; returns false if it has none
-async function useSources(map){
+// Makes `map` the active file set and loads `prefer` (or its first OBJ); returns false if it has none
+async function useSources(map, prefer){
   const objs = [...map.keys()].filter(k => ext(k)==='obj');
   if (!objs.length) return false;
   sources = map;
+  const first = objs.includes(prefer) ? prefer : objs[0];
   const sel = $('objSel'); sel.innerHTML = '';
   objs.forEach(k => { const o=document.createElement('option'); o.value=k; o.textContent=map.get(k).name; sel.append(o); });
+  sel.value = first;
   sel.hidden = objs.length < 2;
-  await loadModel(objs[0]);
+  await loadModel(first);
   return true;
 }
 async function useFiles(files){
@@ -1018,36 +1020,102 @@ window.addEventListener('drop', async e => {
   useFiles(await filesFromDrop(e.dataTransfer));
 });
 
-/* ---------- Folder from the link: index.html?model=<folder> (files listed in <folder>/files.json) ---------- */
+/* ---------- Model from the link: index.html?model=<folder> or ?model=<folder>/<name>.obj ----------
+   If <folder>/files.json exists (node make-files.js <folder>), it lists the files. Otherwise the OBJ
+   (default model.obj) is fetched, its MTL and the textures that MTL names, and then common texture
+   names derived from those (texture_0_normal.png, texture_0_roughness.png, …) are tried. */
 function showEmpty(note){
   $('hud').textContent = 'No model loaded';
   renderMsgs([...(note ? [['warn', note]] : []), ['ok', 'Choose files or a folder, or drop them onto the window.']]);
 }
-async function loadRemoteFolder(folder){
-  const enc = p => p.split('/').map(encodeURIComponent).join('/');
-  const hud = $('hud');
+const enc = p => p.split('/').map(encodeURIComponent).join('/');
+const GUESS_SUFFIXES = ['basecolor','base_color','albedo','diffuse','color','normal','normalgl','nrm','n','bump','height','displacement','disp',
+  'roughness','rough','gloss','glossiness','metallic','metalness','metal','ao','occlusion','orm','arm','specular','spec','emissive','emission','opacity','alpha'];
+const COLOR_SUFFIX = /[_-](basecolor|base_color|albedo|diffuse|color|col|kd)$/;
+
+async function fetchFolderList(dir, names){
+  const map = new Map(); let done = 0;
+  $('hud').textContent = `Downloading… 0/${names.length}`;
+  await Promise.all(names.map(async n => {
+    const res = await fetch(dir + enc(n));
+    if (!res.ok) throw new Error(`could not download ${n}`);
+    map.set(base(n), { name:n, file: await res.blob() });
+    $('hud').textContent = `Downloading… ${++done}/${names.length}`;
+  }));
+  return map;
+}
+async function guessFolder(dir, objName){
+  const map = new Map(), tried = new Set();
+  // Fetches a file once; paths from the MTL are tried as written, then by bare name in the folder
+  const get = async (rel, asText) => {
+    rel = rel.replace(/\\/g,'/').replace(/^\.\//,'');
+    const paths = /^\/|:|(^|\/)\.\.(\/|$)/.test(rel) ? [] : [rel];
+    if (!paths.includes(rel.split('/').pop())) paths.push(rel.split('/').pop());
+    for (const p of paths){
+      const key = base(p);
+      if (map.has(key)) return map.get(key);
+      if (tried.has(p.toLowerCase())) continue;
+      tried.add(p.toLowerCase());
+      const res = await fetch(dir + enc(p)).catch(() => null);
+      if (!res || !res.ok) continue;
+      const entry = asText ? { name:p.split('/').pop(), text: await res.text() } : { name:p.split('/').pop(), file: await res.blob() };
+      map.set(key, entry);
+      return entry;
+    }
+    return null;
+  };
+  $('hud').textContent = `Downloading ${objName}…`;
+  const obj = await get(objName, true);
+  if (!obj) throw new Error(`${objName} not found`);
+
+  const libs = [...obj.text.matchAll(/^[ \t]*mtllib[ \t]+(.+?)[ \t]*$/gm)].flatMap(m => m[1].split(/\s+(?=\S+\.mtl\b)/i));
+  if (!libs.length) libs.push(stem(objName) + '.mtl');
+  const refs = new Set();
+  for (const lib of libs){
+    const mtl = await get(lib, true);
+    if (!mtl) continue;
+    for (let line of mtl.text.split(/\r?\n/)){
+      line = line.trim();
+      const sp = line.search(/\s/);
+      if (sp > 0 && MAP_KEYS[line.slice(0,sp).toLowerCase()]){ const f = parseMap(line.slice(sp+1).trim()).file; if (f) refs.add(f); }
+    }
+  }
+  $('hud').textContent = 'Downloading textures…';
+  await Promise.all([...refs].map(r => get(r)));
+
+  // Name stems to build guesses from: each referenced texture (minus a color suffix) and the OBJ itself
+  const stems = new Set([stem(objName.split('/').pop())]), exts = new Set();
+  for (const r of refs){ const b = r.replace(/\\/g,'/').split('/').pop(); stems.add(stem(b).replace(COLOR_SUFFIX,'')); exts.add(ext(b)); }
+  exts.add('png'); exts.add('jpg');
+  const guesses = [];
+  for (const s of stems) for (const e of exts){
+    guesses.push(`${s}.${e}`);
+    for (const suf of GUESS_SUFFIXES) guesses.push(`${s}_${suf}.${e}`);
+  }
+  let checked = 0;
+  const queue = guesses.filter(g => !map.has(base(g)));
+  const worker = async () => { while (queue.length){ await get(queue.shift()); $('hud').textContent = `Looking for textures… ${++checked}/${guesses.length}`; } };
+  await Promise.all(Array.from({ length:8 }, worker));
+  return map;
+}
+async function loadRemote(param){
+  const isObj = ext(param) === 'obj';
+  const folder = isObj ? param.split('/').slice(0,-1).join('/') : param;
+  const objName = isObj ? param.split('/').pop() : 'model.obj';
+  const dir = folder ? enc(folder) + '/' : '';
   try {
-    if (location.protocol === 'file:') throw new Error('folder links only work when the page is served over http, e.g. on GitHub Pages');
-    const r = await fetch(`${enc(folder)}/files.json`, { cache:'no-cache' });
-    if (!r.ok) throw new Error(`${folder}/files.json not found (run: node make-files.js ${folder})`);
-    const names = await r.json();
-    const map = new Map(); let done = 0;
-    hud.textContent = `Downloading ${folder}… 0/${names.length}`;
-    await Promise.all(names.map(async n => {
-      const res = await fetch(`${enc(folder)}/${enc(n)}`);
-      if (!res.ok) throw new Error(`could not download ${folder}/${n}`);
-      map.set(base(n), { name:n, file: await res.blob() });
-      hud.textContent = `Downloading ${folder}… ${++done}/${names.length}`;
-    }));
-    if (!await useSources(map)) throw new Error(`${folder} contains no .obj file`);
+    if (location.protocol === 'file:') throw new Error('model links only work when the page is served over http, e.g. on GitHub Pages');
+    const list = await fetch(dir + 'files.json', { cache:'no-cache' }).then(r => r.ok ? r.json() : null).catch(() => null);
+    const map = Array.isArray(list) ? await fetchFolderList(dir, list) : await guessFolder(dir, objName);
+    if (!await useSources(map, base(objName))) throw new Error('no .obj file found');
   } catch(e){
-    showEmpty(`Could not open folder "${folder}": ${e.message}.`);
+    showEmpty(`Could not open "${param}": ${e.message}.`);
   }
 }
 
-const folder = (new URLSearchParams(location.search).get('model') || '').replace(/\\/g,'/').replace(/^\/+|\/+$/g,'');
-if (!folder) showEmpty();
-else if (!/^[\w\-. /]+$/.test(folder) || folder.split('/').some(s => s==='..' || s==='.' || !s)) showEmpty(`"${folder}" is not a valid folder name.`);
-else loadRemoteFolder(folder);
+const param = (new URLSearchParams(location.search).get('model') || '').replace(/\\/g,'/').replace(/^\/+|\/+$/g,'');
+if (!param) showEmpty();
+else if (!/^[\w\-. /]+$/.test(param) || param.split('/').some(s => s==='..' || s==='.' || !s)) showEmpty(`"${param}" is not a valid folder name.`);
+else loadRemote(param);
 })();
 </script>
