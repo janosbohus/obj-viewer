@@ -1,3 +1,6 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OBJ Viewer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1015,129 +1018,36 @@ window.addEventListener('drop', async e => {
   useFiles(await filesFromDrop(e.dataTransfer));
 });
 
-/* ---------- Built-in fallback sample: a small house with two generated textures ---------- */
-function brickTexture(){
-  const c=document.createElement('canvas'); c.width=c.height=256; const x=c.getContext('2d');
-  x.fillStyle='#CFC6B8'; x.fillRect(0,0,256,256);
-  const rows=8, bh=256/rows, bw=64;
-  for (let r=0;r<rows;r++){
-    const off = r%2 ? bw/2 : 0;
-    for (let i=-1;i<5;i++){
-      const shade = 150 + ((r*7+i*13)%5)*9;
-      x.fillStyle=`rgb(${shade},${Math.round(shade*0.45)},${Math.round(shade*0.33)})`;
-      x.fillRect(i*bw+off+2, r*bh+2, bw-4, bh-4);
-    }
+/* ---------- Folder from the link: index.html?model=<folder> (files listed in <folder>/files.json) ---------- */
+function showEmpty(note){
+  $('hud').textContent = 'No model loaded';
+  renderMsgs([...(note ? [['warn', note]] : []), ['ok', 'Choose files or a folder, or drop them onto the window.']]);
+}
+async function loadRemoteFolder(folder){
+  const enc = p => p.split('/').map(encodeURIComponent).join('/');
+  const hud = $('hud');
+  try {
+    if (location.protocol === 'file:') throw new Error('folder links only work when the page is served over http, e.g. on GitHub Pages');
+    const r = await fetch(`${enc(folder)}/files.json`, { cache:'no-cache' });
+    if (!r.ok) throw new Error(`${folder}/files.json not found (run: node make-files.js ${folder})`);
+    const names = await r.json();
+    const map = new Map(); let done = 0;
+    hud.textContent = `Downloading ${folder}… 0/${names.length}`;
+    await Promise.all(names.map(async n => {
+      const res = await fetch(`${enc(folder)}/${enc(n)}`);
+      if (!res.ok) throw new Error(`could not download ${folder}/${n}`);
+      map.set(base(n), { name:n, file: await res.blob() });
+      hud.textContent = `Downloading ${folder}… ${++done}/${names.length}`;
+    }));
+    if (!await useSources(map)) throw new Error(`${folder} contains no .obj file`);
+  } catch(e){
+    showEmpty(`Could not open folder "${folder}": ${e.message}.`);
   }
-  return c;
-}
-function tileTexture(){
-  const c=document.createElement('canvas'); c.width=c.height=256; const x=c.getContext('2d');
-  x.fillStyle='#4A2E26'; x.fillRect(0,0,256,256);
-  const rows=8, th=256/rows, tw=32;
-  for (let r=0;r<rows;r++){
-    const off = r%2 ? tw/2 : 0;
-    for (let i=-1;i<9;i++){
-      const g=x.createLinearGradient(0,r*th,0,(r+1)*th);
-      g.addColorStop(0,'#9C4632'); g.addColorStop(1,'#6A2C20');
-      x.fillStyle=g; x.beginPath();
-      x.roundRect ? x.roundRect(i*tw+off+1, r*th+1, tw-2, th-2, [0,0,10,10]) : x.rect(i*tw+off+1, r*th+1, tw-2, th-2);
-      x.fill();
-    }
-  }
-  return c;
-}
-const SAMPLE_OBJ = `# Sample: small house
-mtllib house.mtl
-v -1 0 -1
-v 1 0 -1
-v 1 1.2 -1
-v -1 1.2 -1
-v -1 0 1
-v 1 0 1
-v 1 1.2 1
-v -1 1.2 1
-v -1.15 1.15 -1.15
-v 1.15 1.15 -1.15
-v 1.15 1.15 1.15
-v -1.15 1.15 1.15
-v -1.15 2.0 0
-v 1.15 2.0 0
-v -0.25 0 1.01
-v 0.25 0 1.01
-v 0.25 0.72 1.01
-v -0.25 0.72 1.01
-vt 0 0
-vt 2 0
-vt 2 1.2
-vt 0 1.2
-vt 1 0.85
-vt 0 0
-vt 1 0
-vt 1 1
-vt 0 1
-usemtl wall
-f 5/1 6/2 7/3 8/4
-f 2/1 1/2 4/3 3/4
-f 6/1 2/2 3/3 7/4
-f 1/1 5/2 8/3 4/4
-f 1/1 2/2 6/3 5/4
-f 11/1 10/2 14/5
-f 9/1 12/2 13/5
-usemtl roof
-f 12/1 11/2 14/3 13/4
-f 10/1 9/2 13/3 14/4
-f 9/1 10/2 11/3 12/4
-usemtl door
-f 15/6 16/7 17/8 18/9
-`;
-const SAMPLE_MTL = `newmtl wall
-Kd 1 1 1
-Ks 0.05 0.05 0.05
-Ns 10
-map_Kd textures/brick.png
-
-newmtl roof
-Kd 1 1 1
-Ks 0.15 0.15 0.15
-Ns 25
-map_Kd textures\\tiles.png
-
-newmtl door
-Kd 0.38 0.24 0.14
-Ks 0.25 0.25 0.25
-Ns 40
-`;
-function loadSample(note){
-  sources = new Map([
-    ['house.obj', { name:'house.obj (sample)', text:SAMPLE_OBJ }],
-    ['house.mtl', { name:'house.mtl', text:SAMPLE_MTL }],
-    ['brick.png', { name:'brick.png', canvas:brickTexture() }],
-    ['tiles.png', { name:'tiles.png', canvas:tileTexture() }],
-  ]);
-  $('objSel').hidden = true;
-  loadModel('house.obj').then(() => {
-    renderMsgs([['warn', note], ['ok','Built-in sample loaded. Drop your own files here to replace it.']]);
-  }).catch(e => renderMsgs([['warn', `Loading the sample failed: ${e.message}`]]));
 }
 
-/* ---------- Default model: the folder's files, packed into default-model.js (node make-default.js) ---------- */
-function b64Blob(b64, name){
-  const bin = atob(b64), a = new Uint8Array(bin.length);
-  for (let i=0;i<bin.length;i++) a[i] = bin.charCodeAt(i);
-  const e = ext(name);
-  return new Blob([a], { type: ['png','gif','bmp','webp'].includes(e) ? 'image/'+e : e==='jpg'||e==='jpeg' ? 'image/jpeg' : 'application/octet-stream' });
-}
-const defScript = document.createElement('script');
-defScript.src = 'default-model.js';
-defScript.onload = async () => {
-  const map = new Map();
-  for (const [name, f] of Object.entries(window.DEFAULT_MODEL || {}))
-    map.set(base(name), typeof f.text === 'string' ? { name, text:f.text } : { name, file:b64Blob(f.b64, name) });
-  delete window.DEFAULT_MODEL;
-  try { if (!await useSources(map)) loadSample('default-model.js contains no .obj file.'); }
-  catch(e){ loadSample(`Loading the default model failed: ${e.message}`); }
-};
-defScript.onerror = () => loadSample('default-model.js not found next to this page (run: node make-default.js).');
-document.head.append(defScript);
+const folder = (new URLSearchParams(location.search).get('model') || '').replace(/\\/g,'/').replace(/^\/+|\/+$/g,'');
+if (!folder) showEmpty();
+else if (!/^[\w\-. /]+$/.test(folder) || folder.split('/').some(s => s==='..' || s==='.' || !s)) showEmpty(`"${folder}" is not a valid folder name.`);
+else loadRemoteFolder(folder);
 })();
 </script>
